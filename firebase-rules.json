@@ -1,0 +1,11 @@
+{
+  "rules": {
+    "claims": {
+      ".read": true,
+      "$area": {
+        ".write": "(!data.exists() && newData.hasChildren(['owner','deviceId','updatedAt','timestamp'])) || (data.exists() && !newData.exists())",
+        ".validate": "!newData.exists() || (newData.child('owner').isString() && newData.child('owner').val().length <= 32 && newData.child('deviceId').isString() && newData.child('updatedAt').isNumber() && newData.child('timestamp').isNumber())"
+      }
+    }
+  }
+}
