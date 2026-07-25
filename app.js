@@ -62,7 +62,7 @@ async function clearBoard(event){
   event.preventDefault(); els.clearBoardError.textContent="";
   if(await hashText(els.clearBoardPassword.value)!==CLEAR_PASSWORD_HASH){els.clearBoardError.textContent="Incorrect password.";els.clearBoardPassword.select();return;}
   els.confirmClearBoard.disabled=true;
-  try{if(db){await firebaseApi.set(firebaseApi.ref(db,"claims"),null);}else{claims={};localStorage.removeItem("claimChicagoClaims");refreshStyles();renderPanel();renderLeaderboard();search(els.search.value);}els.clearBoardDialog.close();els.clearBoardForm.reset();}
+  try{if(db){const removals=Object.fromEntries(Object.keys(claims).map(id=>[id,null]));if(Object.keys(removals).length)await firebaseApi.update(firebaseApi.ref(db,"claims"),removals);}else{claims={};localStorage.removeItem("claimChicagoClaims");refreshStyles();renderPanel();renderLeaderboard();search(els.search.value);}els.clearBoardDialog.close();els.clearBoardForm.reset();}
   catch(error){els.clearBoardError.textContent=`The board could not be cleared: ${error.message}`;}
   finally{els.confirmClearBoard.disabled=false;}
 }
