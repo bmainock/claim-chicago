@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#111814" />
+    <meta name="description" content="A task challenge for Chicago's Loop." />
+    <title>Loop Challenge · Claim Chicago</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Newsreader:opsz,wght@6..72,600&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <main class="loop-shell">
+      <header class="topbar loop-topbar">
+        <a class="brand" href="index.html" aria-label="Return to Claim Chicago"><span class="brand-mark">C</span><span><b>Claim Chicago</b><small>Neighborhood territory map</small></span></a>
+        <p class="loop-nav-label">Loop challenge</p>
+        <a class="button ghost" href="index.html">Neighborhood map</a>
+      </header>
+      <section class="loop-workspace">
+        <aside class="loop-panel">
+          <p class="eyebrow">Downtown mission board</p>
+          <h1>Conquer<br />the Loop.</h1>
+          <p class="loop-intro">Choose a team, claim a task, then check it off when your crew completes it.</p>
+          <fieldset class="loop-team-picker"><legend>Choose your team</legend><div class="team-options"><button class="team-choice team-1" type="button" data-team="Team 1"><i></i>Team 1</button><button class="team-choice team-2" type="button" data-team="Team 2"><i></i>Team 2</button><button class="team-choice team-3" type="button" data-team="Team 3"><i></i>Team 3</button></div></fieldset>
+          <div class="loop-summary"><strong id="completedCount">0</strong><span>of <span id="taskCount">0</span> tasks completed</span></div>
+          <p id="loopConnection" class="loop-connection">Loading tasks…</p>
+          <div id="taskList" class="task-list" aria-live="polite"></div>
+        </aside>
+        <div id="loopMap" class="loop-map" aria-label="Map of Loop Challenge tasks"></div>
+      </section>
+    </main>
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script src="firebase-config.js"></script>
+    <script type="module" src="loop.js"></script>
+  </body>
+</html>
