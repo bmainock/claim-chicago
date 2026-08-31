@@ -1,11 +1,5 @@
+import { BADGE_CHALLENGES as CHALLENGES } from "./badge-challenges.js";
 const TEAM_NAMES=["Team 1","Team 2","Team 3"];
-const CHALLENGES=[
-  {id:"downtown-field-trip",title:"Downtown field trip",detail:"Visit four museums in Museum Campus.",points:10,coordinates:[41.8663,-87.6090]},
-  {id:"go-the-distance",title:"Go the distance",detail:"Take a CTA line all the way to the end of its route.",points:null,coordinates:[41.8824,-87.6270]},
-  {id:"nobel-and-a-scholar",title:"Nobel and a Scholar",detail:"Visit three major universities in Chicago.",points:null,coordinates:[41.8789,-87.6483]},
-  {id:"top-to-bottom",title:"Top to bottom",detail:"Travel from the highest point you can reach to the lowest. The farthest verified record holds this stealable challenge.",points:null,coordinates:[41.8840,-87.6300],stealable:true},
-  {id:"one-with-nature",title:"One with Nature",detail:"Visit four parks or reserves that do not touch another claimed park or reserve.",points:null,coordinates:[41.8030,-87.5940]}
-];
 const els=Object.fromEntries(["extraList","extraConnection"].map(id=>[id,document.getElementById(id)]));
 const createDeviceId=()=>{if(typeof crypto.randomUUID==="function")return crypto.randomUUID();const bytes=crypto.getRandomValues(new Uint8Array(16));bytes[6]=(bytes[6]&15)|64;bytes[8]=(bytes[8]&63)|128;const hex=[...bytes].map(byte=>byte.toString(16).padStart(2,"0")).join("");return `${hex.slice(0,8)}-${hex.slice(8,12)}-${hex.slice(12,16)}-${hex.slice(16,20)}-${hex.slice(20)}`;};
 const deviceId=localStorage.getItem("claimChicagoDeviceId")||createDeviceId();localStorage.setItem("claimChicagoDeviceId",deviceId);

@@ -1,4 +1,5 @@
-import { NEIGHBORHOOD_POINTS } from "./neighborhood-points.js";
+import { NEIGHBORHOOD_POINTS, NEIGHBORHOOD_CHALLENGES } from "./neighborhood-points.js";
+import { BADGE_POINTS_BY_ID } from "./badge-challenges.js";
 
 // The local KML is a NetworkLink. Load the linked KML directly so the deployed
 // site always receives the complete district geometry.
@@ -7,12 +8,13 @@ const CHICAGO_CENTER = [41.88, -87.63];
 const CLEAR_PASSWORD_HASH = "339319de11cc80f80baa79065f9dc62ad6bf16fb39768f701914296458099254";
 const normalizeName = value => String(value).trim().toLowerCase().replace(/[^a-z0-9]/g,"");
 const POINTS_BY_NAME = new Map(Object.entries(NEIGHBORHOOD_POINTS).map(([name,points])=>[normalizeName(name),points]));
+const CHALLENGES_BY_NAME = new Map(Object.entries(NEIGHBORHOOD_CHALLENGES).map(([name,challenge])=>[normalizeName(name),challenge]));
 const map = L.map("map", { zoomControl: false, minZoom: 9 }).setView(CHICAGO_CENTER, 10);
 L.control.zoom({ position: "bottomleft" }).addTo(map);
 L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", { attribution: "&copy; <a href=\"https://www.openstreetmap.org/copyright\">OpenStreetMap</a> contributors", maxZoom: 19 }).addTo(map);
 
-const els = Object.fromEntries(["search","results","panel","openPanel","emptyState","detailState","areaName","ownerCard","claimForm","teamPicker","actionButton","actionHint","message","closePanel","notifyButton","leaderboardButton","clearBoardButton","gameMenu","leaderboardDialog","closeLeaderboard","leaderboardRows","clearBoardDialog","clearBoardForm","closeClearBoard","clearBoardPassword","clearBoardError","confirmClearBoard","connectionDot","connectionText"].map(id => [id, document.getElementById(id)]));
-let areas = [], layerById = new Map(), claims = {}, loopCompletions = JSON.parse(localStorage.getItem("claimChicagoLoopCompletions") || "{}"), selected = null, db = null, firebaseApi = null, firebaseUserId = null, panelMinimized = false;
+const els = Object.fromEntries(["search","results","panel","openPanel","emptyState","detailState","areaName","ownerCard","neighborhoodChallenge","challengeName","challengeDescription","claimForm","teamPicker","actionButton","actionHint","message","closePanel","notifyButton","leaderboardButton","clearBoardButton","gameMenu","leaderboardDialog","closeLeaderboard","leaderboardRows","clearBoardDialog","clearBoardForm","closeClearBoard","clearBoardPassword","clearBoardError","confirmClearBoard","connectionDot","connectionText"].map(id => [id, document.getElementById(id)]));
+let areas = [], layerById = new Map(), claims = {}, loopCompletions = JSON.parse(localStorage.getItem("claimChicagoLoopCompletions") || "{}"), badgeCompletions = JSON.parse(localStorage.getItem("claimChicagoExtraCompletions") || "{}"), specialBadgeClaims = JSON.parse(localStorage.getItem("claimChicagoSpecialClaims") || "{}"), selected = null, db = null, firebaseApi = null, firebaseUserId = null, panelMinimized = false;
 const LOOP_TASKS_REQUIRED = 3;
 const createDeviceId = () => {
   if (typeof crypto.randomUUID === "function") return crypto.randomUUID();
@@ -29,6 +31,7 @@ localStorage.setItem("claimChicagoDeviceId", deviceId);
 const areaName = f => (f.properties.community || f.properties.name || f.properties.pri_neigh || "Unknown").trim();
 const areaId = f => String(f.properties.area_num_1 || f.properties.area_numbe || areaName(f)).toLowerCase().replace(/[^a-z0-9]+/g,"-");
 const pointsFor = feature => POINTS_BY_NAME.get(normalizeName(areaName(feature))) || 0;
+const challengeFor = feature => CHALLENGES_BY_NAME.get(normalizeName(areaName(feature)));
 const mine = claim => db ? claim?.userId === firebaseUserId : claim?.deviceId === deviceId;
 const completedLoopTasks = team => Object.keys(loopCompletions?.[team] || {}).length;
 const canClaimNeighborhood = team => !!team && completedLoopTasks(team) >= LOOP_TASKS_REQUIRED;
@@ -70,13 +73,20 @@ const styleFor = feature => { const claim=claims[areaId(feature)]; return { colo
 function setConnection(kind,text){ els.connectionDot.className=`dot ${kind}`; els.connectionText.textContent=text; }
 function refreshStyles(){ layerById.forEach((layer,id)=>layer.setStyle(styleFor(areas.find(f=>areaId(f)===id)))); }
 function renderTeamPicker(disabled=false){ document.querySelectorAll(".team-choice").forEach(button=>{button.classList.toggle("selected",button.dataset.team===selectedTeam);button.disabled=disabled;}); }
+function badgePointsFor(team){
+  const completed=Object.keys(badgeCompletions?.[team]||{}).reduce((sum,id)=>sum+(BADGE_POINTS_BY_ID.get(id)||0),0);
+  const special=Object.entries(specialBadgeClaims||{}).reduce((sum,[id,claim])=>sum+(claim?.owner===team?(BADGE_POINTS_BY_ID.get(id)||0):0),0);
+  return completed+special;
+}
 function renderLeaderboard(){
-  const teams=["Team 1","Team 2","Team 3"].map(team=>{const teamClaims=Object.entries(claims).filter(([,claim])=>claim.owner===team);return{team,count:teamClaims.length,points:teamClaims.reduce((sum,[id])=>{const feature=areas.find(item=>areaId(item)===id);return sum+(feature?pointsFor(feature):0);},0)}}).sort((a,b)=>b.points-a.points||b.count-a.count||a.team.localeCompare(b.team));
-  els.leaderboardRows.innerHTML=teams.map((entry,index)=>`<div class="leaderboard-row"><span class="rank">${index+1}</span><span class="team-dot" style="background:${ownerColor(entry.team)}"></span><span class="team-label"><strong>${entry.team}</strong><small>${entry.count===1?"1 neighborhood":`${entry.count} neighborhoods`}</small></span><span class="score-wrap"><strong class="team-score">${entry.points}</strong><small>pts</small></span></div>`).join("");
+  const teams=["Team 1","Team 2","Team 3"].map(team=>{const teamClaims=Object.entries(claims).filter(([,claim])=>claim.owner===team),neighborhoodPoints=teamClaims.reduce((sum,[id])=>{const feature=areas.find(item=>areaId(item)===id);return sum+(feature?pointsFor(feature):0);},0),badgePoints=badgePointsFor(team);return{team,count:teamClaims.length,badgePoints,points:neighborhoodPoints+badgePoints}}).sort((a,b)=>b.points-a.points||b.count-a.count||a.team.localeCompare(b.team));
+  els.leaderboardRows.innerHTML=teams.map((entry,index)=>`<div class="leaderboard-row"><span class="rank">${index+1}</span><span class="team-dot" style="background:${ownerColor(entry.team)}"></span><span class="team-label"><strong>${entry.team}</strong><small>${entry.count===1?"1 neighborhood":`${entry.count} neighborhoods`} · ${entry.badgePoints} badge pts</small></span><span class="score-wrap"><strong class="team-score">${entry.points}</strong><small>pts</small></span></div>`).join("");
 }
 function renderPanel(){
   els.panel.hidden=panelMinimized; els.openPanel.hidden=!panelMinimized; els.emptyState.hidden=!!selected; els.detailState.hidden=!selected; els.panel.classList.toggle("empty",!selected); if(!selected)return;
   const feature=areas.find(f=>areaId(f)===selected), claim=claims[selected]; els.areaName.textContent=areaName(feature);
+  const challenge=challengeFor(feature); els.neighborhoodChallenge.hidden=!challenge;
+  if(challenge){els.challengeName.textContent=challenge.title;els.challengeDescription.textContent=challenge.description;}
   const points=pointsFor(feature);
   if(claim){
     const ownership=mine(claim)?"Claimed by you - ":"Held by ";
@@ -109,6 +119,8 @@ async function initFirebase(){
   const config=window.CLAIM_CHICAGO_FIREBASE_CONFIG; if(!config){ claims=JSON.parse(localStorage.getItem("claimChicagoClaims")||"{}");setConnection("demo","Demo mode · add Firebase for shared updates");return; }
   try { const [appApi,dbApi,authApi]=await Promise.all([import("https://www.gstatic.com/firebasejs/10.12.5/firebase-app.js"),import("https://www.gstatic.com/firebasejs/10.12.5/firebase-database.js"),import("https://www.gstatic.com/firebasejs/10.12.5/firebase-auth.js")]); const app=appApi.initializeApp(config);const credential=await authApi.signInAnonymously(authApi.getAuth(app));firebaseUserId=credential.user.uid;db=dbApi.getDatabase(app);firebaseApi=dbApi;
     dbApi.onValue(dbApi.ref(db,"loopTaskCompletions"),snap=>{loopCompletions=snap.val()||{};renderPanel();},error=>{console.error(error);loopCompletions=JSON.parse(localStorage.getItem("claimChicagoLoopCompletions")||"{}");renderPanel();});
+    dbApi.onValue(dbApi.ref(db,"extraChallengeCompletions"),snap=>{badgeCompletions=snap.val()||{};renderLeaderboard();},error=>{console.error(error);badgeCompletions=JSON.parse(localStorage.getItem("claimChicagoExtraCompletions")||"{}");renderLeaderboard();});
+    dbApi.onValue(dbApi.ref(db,"specialChallengeClaims"),snap=>{specialBadgeClaims=snap.val()||{};renderLeaderboard();},error=>{console.error(error);specialBadgeClaims=JSON.parse(localStorage.getItem("claimChicagoSpecialClaims")||"{}");renderLeaderboard();});
     dbApi.onValue(dbApi.ref(db,"claims"),snap=>{const before={...claims};claims=snap.val()||{};refreshStyles();renderPanel();renderLeaderboard();search(els.search.value);notifyChanges(before,claims);setConnection("live","Live · updates appear instantly");},error=>{console.error(error);db=null;firebaseApi=null;firebaseUserId=null;claims=JSON.parse(localStorage.getItem("claimChicagoClaims")||"{}");refreshStyles();renderPanel();renderLeaderboard();search(els.search.value);setConnection("demo","Live connection failed · using this device only");});
   } catch(e){ console.error(e);db=null;firebaseApi=null;firebaseUserId=null;setConnection("demo","Connection failed · using this device only");claims=JSON.parse(localStorage.getItem("claimChicagoClaims")||"{}"); }
 }

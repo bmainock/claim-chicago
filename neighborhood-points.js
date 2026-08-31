@@ -177,3 +177,14 @@ export const NEIGHBORHOOD_POINTS = {
   "Wrightwood Neighbors": 8,
   "Wrigleyville": 5,
 };
+
+// Values currently shared by every row in Columns C and D of
+// chicago_neighborhood_points_rated.xlsx. Keeping these alongside the
+// neighborhood keys makes it straightforward to use unique future values.
+const CURRENT_CHALLENGE = {
+  title: "Hopeful Programmer",
+  description: "Program claim chicago to have challenge names and challenges descriptions (Not failable)",
+};
+export const NEIGHBORHOOD_CHALLENGES = Object.fromEntries(
+  Object.keys(NEIGHBORHOOD_POINTS).map(name => [name, { ...CURRENT_CHALLENGE }])
+);

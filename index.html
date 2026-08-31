@@ -29,7 +29,7 @@
           <summary class="button menu-button">Game menu <span>⌄</span></summary>
           <div class="menu-popover">
             <a class="menu-action" href="loop.html"><b>Loop challenge</b><small>Claim and complete downtown tasks</small></a>
-            <a class="menu-action" href="extras.html"><b>Extra challenges</b><small>Citywide team missions and records</small></a>
+            <a class="menu-action" href="extras.html"><b>Badges</b><small>Citywide team missions and records</small></a>
             <button id="leaderboardButton" class="menu-action" type="button"><b>Leaderboard</b><small>View scores and standings</small></button>
             <button id="notifyButton" class="menu-action" type="button"><b>Enable alerts</b><small>Notify me about new claims</small></button>
             <button id="clearBoardButton" class="menu-action danger-action" type="button"><b>Clear board</b><small>Reset every team's claims</small></button>
@@ -59,6 +59,11 @@
             <p class="eyebrow">Community area</p>
             <h2 id="areaName"></h2>
             <div id="ownerCard" class="owner-card"></div>
+            <div id="neighborhoodChallenge" class="neighborhood-challenge">
+              <p class="eyebrow">Neighborhood challenge</p>
+              <strong id="challengeName"></strong>
+              <small id="challengeDescription"></small>
+            </div>
             <form id="claimForm">
               <fieldset id="teamPicker">
                 <legend>Choose your team</legend>
