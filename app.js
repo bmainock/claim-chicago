@@ -1,17 +1,25 @@
 import { NEIGHBORHOOD_POINTS } from "./neighborhood-points.js";
 
-const DATA_URL = "https://data.cityofchicago.org/resource/igwz-8jzy.geojson?$limit=100";
-const CHICAGO_CENTER = [41.84, -87.68];
+const DATA_URL = "./Chicago%20Neighborhood%20Guide%20-%20Chicago%20Neighborhood%20Map%20With%20Real%20Estate%20Listings.kml";
+const CHICAGO_CENTER = [41.88, -87.63];
 const CLEAR_PASSWORD_HASH = "339319de11cc80f80baa79065f9dc62ad6bf16fb39768f701914296458099254";
 const normalizeName = value => String(value).trim().toLowerCase().replace(/[^a-z0-9]/g,"");
 const POINTS_BY_NAME = new Map(Object.entries(NEIGHBORHOOD_POINTS).map(([name,points])=>[normalizeName(name),points]));
 const map = L.map("map", { zoomControl: false, minZoom: 9 }).setView(CHICAGO_CENTER, 10);
 L.control.zoom({ position: "bottomleft" }).addTo(map);
-L.tileLayer("https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png", { attribution: "&copy; OpenStreetMap &copy; CARTO", maxZoom: 19 }).addTo(map);
+L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", { attribution: "&copy; <a href=\"https://www.openstreetmap.org/copyright\">OpenStreetMap</a> contributors", maxZoom: 19 }).addTo(map);
 
 const els = Object.fromEntries(["search","results","panel","emptyState","detailState","areaName","ownerCard","claimForm","teamPicker","actionButton","actionHint","message","closePanel","notifyButton","leaderboardButton","clearBoardButton","gameMenu","leaderboardDialog","closeLeaderboard","leaderboardRows","clearBoardDialog","clearBoardForm","closeClearBoard","clearBoardPassword","clearBoardError","confirmClearBoard","connectionDot","connectionText"].map(id => [id, document.getElementById(id)]));
 let areas = [], layerById = new Map(), claims = {}, selected = null, db = null, firebaseApi = null;
-let deviceId = localStorage.getItem("claimChicagoDeviceId") || crypto.randomUUID();
+const createDeviceId = () => {
+  if (typeof crypto.randomUUID === "function") return crypto.randomUUID();
+  const bytes = crypto.getRandomValues(new Uint8Array(16));
+  bytes[6] = (bytes[6] & 0x0f) | 0x40;
+  bytes[8] = (bytes[8] & 0x3f) | 0x80;
+  const hex = [...bytes].map(byte => byte.toString(16).padStart(2, "0")).join("");
+  return `${hex.slice(0,8)}-${hex.slice(8,12)}-${hex.slice(12,16)}-${hex.slice(16,20)}-${hex.slice(20)}`;
+};
+let deviceId = localStorage.getItem("claimChicagoDeviceId") || createDeviceId();
 let selectedTeam = localStorage.getItem("claimChicagoTeam") || "";
 localStorage.setItem("claimChicagoDeviceId", deviceId);
 
@@ -19,6 +27,31 @@ const areaName = f => (f.properties.community || f.properties.name || f.properti
 const areaId = f => String(f.properties.area_num_1 || f.properties.area_numbe || areaName(f)).toLowerCase().replace(/[^a-z0-9]+/g,"-");
 const pointsFor = feature => POINTS_BY_NAME.get(normalizeName(areaName(feature))) || 0;
 const mine = claim => claim?.deviceId === deviceId;
+function parseKml(kmlText){
+  const xml=new DOMParser().parseFromString(kmlText,"application/xml");
+  if(xml.querySelector("parsererror"))throw new Error("District boundary data is not valid KML.");
+  const elements=(node,name)=>Array.from(node.getElementsByTagNameNS("*",name));
+  const features=elements(xml,"Placemark").map(placemark=>{
+    const name=elements(placemark,"name")[0]?.textContent?.trim();
+    const polygons=elements(placemark,"Polygon").map(polygon=>{
+      const outer=elements(polygon,"outerBoundaryIs")[0];
+      const coordinates=outer&&elements(outer,"coordinates")[0]?.textContent;
+      return coordinates?.trim().split(/\s+/).map(pair=>pair.split(",").slice(0,2).map(Number)).filter(pair=>pair.length===2&&pair.every(Number.isFinite));
+    }).filter(ring=>ring?.length>=3);
+    if(!name||!polygons.length)return null;
+    return {type:"Feature",properties:{name},geometry:polygons.length===1?{type:"Polygon",coordinates:[polygons[0]]}:{type:"MultiPolygon",coordinates:polygons.map(ring=>[ring])}};
+  }).filter(Boolean);
+  const networkLink=elements(xml,"NetworkLink")[0];
+  const href=networkLink&&elements(networkLink,"href")[0]?.textContent?.trim();
+  return {geo:{type:"FeatureCollection",features},href};
+}
+async function loadDistrictGeoJson(url){
+  const response=await fetch(url);if(!response.ok)throw new Error("District boundary request failed");
+  const {geo,href}=parseKml(await response.text());
+  if(geo.features.length)return geo;
+  if(href)return loadDistrictGeoJson(new URL(href,url).href);
+  throw new Error("No district borders were found in the KML file.");
+}
 const ownerColor = name => {
   const teamColors = { "Team 1":"#e45745", "Team 2":"#3f7fc4", "Team 3":"#2f9a74" };
   if (teamColors[name]) return teamColors[name];
@@ -50,7 +83,7 @@ function search(q){ const term=q.trim().toLowerCase(); const found=(term?areas.f
 async function initFirebase(){
   const config=window.CLAIM_CHICAGO_FIREBASE_CONFIG; if(!config){ claims=JSON.parse(localStorage.getItem("claimChicagoClaims")||"{}");setConnection("demo","Demo mode · add Firebase for shared updates");return; }
   try { const appApi=await import("https://www.gstatic.com/firebasejs/10.12.5/firebase-app.js"), dbApi=await import("https://www.gstatic.com/firebasejs/10.12.5/firebase-database.js"); const app=appApi.initializeApp(config);db=dbApi.getDatabase(app);firebaseApi=dbApi;
-    dbApi.onValue(dbApi.ref(db,"claims"),snap=>{const before={...claims};claims=snap.val()||{};refreshStyles();renderPanel();renderLeaderboard();search(els.search.value);notifyChanges(before,claims);setConnection("live","Live · updates appear instantly");});
+    dbApi.onValue(dbApi.ref(db,"claims"),snap=>{const before={...claims};claims=snap.val()||{};refreshStyles();renderPanel();renderLeaderboard();search(els.search.value);notifyChanges(before,claims);setConnection("live","Live · updates appear instantly");},error=>{console.error(error);db=null;firebaseApi=null;claims=JSON.parse(localStorage.getItem("claimChicagoClaims")||"{}");refreshStyles();renderPanel();renderLeaderboard();search(els.search.value);setConnection("demo","Live connection failed · using this device only");});
   } catch(e){ console.error(e);setConnection("demo","Connection failed · using this device only");claims=JSON.parse(localStorage.getItem("claimChicagoClaims")||"{}"); }
 }
 async function updateClaim(id,next){
@@ -66,7 +99,7 @@ async function clearBoard(event){
   catch(error){els.clearBoardError.textContent=`The board could not be cleared: ${error.message}`;}
   finally{els.confirmClearBoard.disabled=false;}
 }
-function notifyChanges(before,after){ if(Notification.permission!=="granted")return; Object.entries(after).forEach(([id,c])=>{if(!before[id]&&c.deviceId!==deviceId){const f=areas.find(x=>areaId(x)===id);if(f)new Notification(`${areaName(f)} was claimed`,{body:`${c.owner} now holds this neighborhood.`});}}); }
+function notifyChanges(before,after){ if(!("Notification" in window)||Notification.permission!=="granted")return; Object.entries(after).forEach(([id,c])=>{if(!before[id]&&c.deviceId!==deviceId){const f=areas.find(x=>areaId(x)===id);if(f)new Notification(`${areaName(f)} was claimed`,{body:`${c.owner} now holds this neighborhood.`});}}); }
 
 els.teamPicker.addEventListener("click",e=>{const button=e.target.closest("[data-team]");if(!button||button.disabled)return;selectedTeam=button.dataset.team;localStorage.setItem("claimChicagoTeam",selectedTeam);renderTeamPicker();renderPanel();});
 els.claimForm.addEventListener("submit",async e=>{e.preventDefault();if(!selectedTeam&&!claims[selected])return;els.actionButton.disabled=true;try{const timestamp=Date.now();await updateClaim(selected,claims[selected]?null:{owner:selectedTeam,deviceId,updatedAt:timestamp,timestamp});renderLeaderboard();}catch(err){els.message.textContent=err.message;els.message.className="message error";}finally{renderPanel();}});
@@ -78,8 +111,8 @@ els.clearBoardButton.addEventListener("click",()=>{els.gameMenu.open=false;els.c
 if("Notification" in window&&Notification.permission==="granted")els.notifyButton.querySelector("b").textContent="Alerts on";
 
 async function init(){
-  try { const response=await fetch(DATA_URL);if(!response.ok)throw new Error("Boundary request failed");const geo=await response.json();areas=geo.features.sort((a,b)=>areaName(a).localeCompare(areaName(b)));
-    L.geoJSON(geo,{style:styleFor,onEachFeature:(f,l)=>{const id=areaId(f);layerById.set(id,l);l.bindTooltip(areaName(f),{sticky:true,direction:"top"});l.on({click:()=>selectArea(id,false),mouseover:()=>l.setStyle({weight:3}),mouseout:()=>refreshStyles()});}}).addTo(map);await initFirebase();refreshStyles();renderTeamPicker();renderLeaderboard();
-  } catch(e){console.error(e);setConnection("demo","Could not load Chicago boundaries");els.emptyState.querySelector("p:not(.eyebrow)").textContent="The city boundary data could not load. Check your connection and refresh.";}
+  try { const geo=await loadDistrictGeoJson(DATA_URL);areas=geo.features.sort((a,b)=>areaName(a).localeCompare(areaName(b)));
+    const districtLayer=L.geoJSON(geo,{style:styleFor,onEachFeature:(f,l)=>{const id=areaId(f);layerById.set(id,l);l.bindTooltip(areaName(f),{sticky:true,direction:"top"});l.on({click:()=>selectArea(id,false),mouseover:()=>l.setStyle({weight:3}),mouseout:()=>refreshStyles()});}}).addTo(map);if(districtLayer.getBounds().isValid())map.fitBounds(districtLayer.getBounds(),{padding:[24,24],maxZoom:11});await initFirebase();refreshStyles();renderTeamPicker();renderLeaderboard();
+  } catch(e){console.error(e);setConnection("demo","Could not load district boundaries");els.emptyState.querySelector("p:not(.eyebrow)").textContent="The district boundary data could not load. Check your connection and refresh.";}
 }
 init();

@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<kml xmlns="http://www.opengis.net/kml/2.2">
+  <Document>
+    <name>Chicago Neighborhood Guide - Chicago Neighborhood Map With Real Estate Listings</name>
+    <description>Hover over a neighborhood and tap for the Neighborhood Guide with real estate listings and neighborhood information.</description>
+    <NetworkLink>
+      <name>Chicago Neighborhood Guide - Chicago Neighborhood Map With Real Estate Listings</name>
+      <Link>
+        <href><![CDATA[https://www.google.com/maps/d/u/0/kml?forcekml=1&mid=1tcZJ-JgIkV0PNabasV7LlfQ9ZdyyNunc]]></href>
+      </Link>
+    </NetworkLink>
+  </Document>
+</kml>
