@@ -1,6 +1,8 @@
 import { NEIGHBORHOOD_POINTS } from "./neighborhood-points.js";
 
-const DATA_URL = "./Chicago%20Neighborhood%20Guide%20-%20Chicago%20Neighborhood%20Map%20With%20Real%20Estate%20Listings.kml";
+// The local KML is a NetworkLink. Load the linked KML directly so the deployed
+// site always receives the complete district geometry.
+const DATA_URL = "https://www.google.com/maps/d/kml?mid=1tcZJ-JgIkV0PNabasV7LlfQ9ZdyyNunc&forcekml=1";
 const CHICAGO_CENTER = [41.88, -87.63];
 const CLEAR_PASSWORD_HASH = "339319de11cc80f80baa79065f9dc62ad6bf16fb39768f701914296458099254";
 const normalizeName = value => String(value).trim().toLowerCase().replace(/[^a-z0-9]/g,"");
