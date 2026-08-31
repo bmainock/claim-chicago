@@ -10,7 +10,7 @@ L.control.zoom({ position: "bottomleft" }).addTo(map);
 L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", { attribution: "&copy; <a href=\"https://www.openstreetmap.org/copyright\">OpenStreetMap</a> contributors", maxZoom: 19 }).addTo(map);
 
 const els = Object.fromEntries(["search","results","panel","emptyState","detailState","areaName","ownerCard","claimForm","teamPicker","actionButton","actionHint","message","closePanel","notifyButton","leaderboardButton","clearBoardButton","gameMenu","leaderboardDialog","closeLeaderboard","leaderboardRows","clearBoardDialog","clearBoardForm","closeClearBoard","clearBoardPassword","clearBoardError","confirmClearBoard","connectionDot","connectionText"].map(id => [id, document.getElementById(id)]));
-let areas = [], layerById = new Map(), claims = {}, selected = null, db = null, firebaseApi = null;
+let areas = [], layerById = new Map(), claims = {}, selected = null, db = null, firebaseApi = null, firebaseUserId = null;
 const createDeviceId = () => {
   if (typeof crypto.randomUUID === "function") return crypto.randomUUID();
   const bytes = crypto.getRandomValues(new Uint8Array(16));
@@ -26,7 +26,7 @@ localStorage.setItem("claimChicagoDeviceId", deviceId);
 const areaName = f => (f.properties.community || f.properties.name || f.properties.pri_neigh || "Unknown").trim();
 const areaId = f => String(f.properties.area_num_1 || f.properties.area_numbe || areaName(f)).toLowerCase().replace(/[^a-z0-9]+/g,"-");
 const pointsFor = feature => POINTS_BY_NAME.get(normalizeName(areaName(feature))) || 0;
-const mine = claim => claim?.deviceId === deviceId;
+const mine = claim => db ? claim?.userId === firebaseUserId : claim?.deviceId === deviceId;
 function parseKml(kmlText){
   const xml=new DOMParser().parseFromString(kmlText,"application/xml");
   if(xml.querySelector("parsererror"))throw new Error("District boundary data is not valid KML.");
@@ -49,7 +49,7 @@ async function loadDistrictGeoJson(url){
   const response=await fetch(url);if(!response.ok)throw new Error("District boundary request failed");
   const {geo,href}=parseKml(await response.text());
   if(geo.features.length)return geo;
-  if(href)return loadDistrictGeoJson(new URL(href,url).href);
+  if(href)return loadDistrictGeoJson(new URL(href,new URL(url,window.location.href)).href);
   throw new Error("No district borders were found in the KML file.");
 }
 const ownerColor = name => {
@@ -82,12 +82,12 @@ function search(q){ const term=q.trim().toLowerCase(); const found=(term?areas.f
 
 async function initFirebase(){
   const config=window.CLAIM_CHICAGO_FIREBASE_CONFIG; if(!config){ claims=JSON.parse(localStorage.getItem("claimChicagoClaims")||"{}");setConnection("demo","Demo mode · add Firebase for shared updates");return; }
-  try { const appApi=await import("https://www.gstatic.com/firebasejs/10.12.5/firebase-app.js"), dbApi=await import("https://www.gstatic.com/firebasejs/10.12.5/firebase-database.js"); const app=appApi.initializeApp(config);db=dbApi.getDatabase(app);firebaseApi=dbApi;
-    dbApi.onValue(dbApi.ref(db,"claims"),snap=>{const before={...claims};claims=snap.val()||{};refreshStyles();renderPanel();renderLeaderboard();search(els.search.value);notifyChanges(before,claims);setConnection("live","Live · updates appear instantly");},error=>{console.error(error);db=null;firebaseApi=null;claims=JSON.parse(localStorage.getItem("claimChicagoClaims")||"{}");refreshStyles();renderPanel();renderLeaderboard();search(els.search.value);setConnection("demo","Live connection failed · using this device only");});
-  } catch(e){ console.error(e);setConnection("demo","Connection failed · using this device only");claims=JSON.parse(localStorage.getItem("claimChicagoClaims")||"{}"); }
+  try { const [appApi,dbApi,authApi]=await Promise.all([import("https://www.gstatic.com/firebasejs/10.12.5/firebase-app.js"),import("https://www.gstatic.com/firebasejs/10.12.5/firebase-database.js"),import("https://www.gstatic.com/firebasejs/10.12.5/firebase-auth.js")]); const app=appApi.initializeApp(config);const credential=await authApi.signInAnonymously(authApi.getAuth(app));firebaseUserId=credential.user.uid;db=dbApi.getDatabase(app);firebaseApi=dbApi;
+    dbApi.onValue(dbApi.ref(db,"claims"),snap=>{const before={...claims};claims=snap.val()||{};refreshStyles();renderPanel();renderLeaderboard();search(els.search.value);notifyChanges(before,claims);setConnection("live","Live · updates appear instantly");},error=>{console.error(error);db=null;firebaseApi=null;firebaseUserId=null;claims=JSON.parse(localStorage.getItem("claimChicagoClaims")||"{}");refreshStyles();renderPanel();renderLeaderboard();search(els.search.value);setConnection("demo","Live connection failed · using this device only");});
+  } catch(e){ console.error(e);db=null;firebaseApi=null;firebaseUserId=null;setConnection("demo","Connection failed · using this device only");claims=JSON.parse(localStorage.getItem("claimChicagoClaims")||"{}"); }
 }
 async function updateClaim(id,next){
-  if(db){ const ref=firebaseApi.ref(db,`claims/${id}`); const result=await firebaseApi.runTransaction(ref,current=>{ if(next===null)return current?.deviceId===deviceId?null:undefined; return current?undefined:next; }); if(!result.committed)throw new Error("That neighborhood changed before your request finished. Try again."); }
+  if(db){ const ref=firebaseApi.ref(db,`claims/${id}`); const result=await firebaseApi.runTransaction(ref,current=>{ if(next===null)return current?.userId===firebaseUserId?null:undefined; return current?undefined:next; }); if(!result.committed)throw new Error("That neighborhood changed before your request finished. Try again."); }
   else { if(next&&claims[id])throw new Error("This neighborhood is already claimed."); if(next===null&&!mine(claims[id]))throw new Error("Only the current holder can forfeit this area."); if(next===null)delete claims[id];else claims[id]=next;localStorage.setItem("claimChicagoClaims",JSON.stringify(claims));refreshStyles();renderPanel(); }
 }
 async function hashText(value){const bytes=new TextEncoder().encode(value);const digest=await crypto.subtle.digest("SHA-256",bytes);return [...new Uint8Array(digest)].map(byte=>byte.toString(16).padStart(2,"0")).join("");}
@@ -102,7 +102,7 @@ async function clearBoard(event){
 function notifyChanges(before,after){ if(!("Notification" in window)||Notification.permission!=="granted")return; Object.entries(after).forEach(([id,c])=>{if(!before[id]&&c.deviceId!==deviceId){const f=areas.find(x=>areaId(x)===id);if(f)new Notification(`${areaName(f)} was claimed`,{body:`${c.owner} now holds this neighborhood.`});}}); }
 
 els.teamPicker.addEventListener("click",e=>{const button=e.target.closest("[data-team]");if(!button||button.disabled)return;selectedTeam=button.dataset.team;localStorage.setItem("claimChicagoTeam",selectedTeam);renderTeamPicker();renderPanel();});
-els.claimForm.addEventListener("submit",async e=>{e.preventDefault();if(!selectedTeam&&!claims[selected])return;els.actionButton.disabled=true;try{const timestamp=Date.now();await updateClaim(selected,claims[selected]?null:{owner:selectedTeam,deviceId,updatedAt:timestamp,timestamp});renderLeaderboard();}catch(err){els.message.textContent=err.message;els.message.className="message error";}finally{renderPanel();}});
+els.claimForm.addEventListener("submit",async e=>{e.preventDefault();if(!selectedTeam&&!claims[selected])return;els.actionButton.disabled=true;try{const timestamp=Date.now();await updateClaim(selected,claims[selected]?null:{owner:selectedTeam,deviceId,userId:firebaseUserId,updatedAt:timestamp,timestamp});renderLeaderboard();}catch(err){els.message.textContent=err.message;els.message.className="message error";}finally{renderPanel();}});
 els.search.addEventListener("input",e=>search(e.target.value)); els.results.addEventListener("click",e=>{const b=e.target.closest("[data-id]");if(b)selectArea(b.dataset.id);});
 document.addEventListener("click",e=>{if(!e.target.closest(".search-wrap"))els.results.hidden=true;});els.closePanel.addEventListener("click",()=>{selected=null;renderPanel();refreshStyles();map.setView(CHICAGO_CENTER,10);});
 els.notifyButton.addEventListener("click",async()=>{ if(!("Notification" in window)){els.notifyButton.querySelector("b").textContent="Alerts unsupported";return;} const p=await Notification.requestPermission();els.notifyButton.querySelector("b").textContent=p==="granted"?"Alerts on":"Alerts blocked";els.gameMenu.open=false;});
