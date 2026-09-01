@@ -4,10 +4,11 @@ const TASKS=[
   {id:"cloud-gate",title:"Meet at Cloud Gate",detail:"Gather your crew at Millennium Park's mirrored landmark.",coordinates:[41.8826,-87.6233]},
   {id:"cultural-center",title:"Explore the Cultural Center",detail:"Find a mosaic, dome, or exhibition worth sharing.",coordinates:[41.8839,-87.6247]},
   {id:"riverwalk",title:"Walk the Riverwalk",detail:"Complete a stretch between State Street and Michigan Avenue.",coordinates:[41.8881,-87.6274]},
-  {id:"state-street",title:"State Street mission",detail:"Visit a local business or landmark along State Street.",coordinates:[41.8847,-87.6272]},
-  {id:"theatre-district",title:"Find the theater lights",detail:"Visit a marquee in Chicago's Theatre District.",coordinates:[41.8843,-87.6287]},
-  {id:"art-institute",title:"Art Institute stop",detail:"Take in a favorite work or the lion statues outside.",coordinates:[41.8796,-87.6237]},
-  {id:"willis-tower",title:"Look up at Willis Tower",detail:"Reach the tower plaza and record your team visit.",coordinates:[41.8789,-87.6359]}
+  {id:"state-street",title:"State Street mission",detail:"City .",coordinates:[41.8847,-87.6272]},
+  {id:"theatre-district",title:"I finally made it!",detail:"Upon arriving at a marquee in Chicago's Theatre District sing one show tune for one minute",coordinates:[41.8843,-87.6287]},
+  {id:"art-institute",title:"Art Institute stop",detail:"At the art insitute, take out your phone and draw your favorite animal for 1 minute. Your teammate must guess the animal you drew",coordinates:[41.8796,-87.6237]},
+  {id:"willis-tower",title:"In the Clouds",detail:"Go to the Willis Tower Skydeck and take a selfie with your teammate in the glass box. (Cannot be used for height badge)",coordinates:[41.8789,-87.6359]},
+  {id:"Pedway",title:"Lower Wacker of Walking",detail:"Near Macy's on state street enter the pedway below the city. Walk for at least 5 minutes or till you find a train, food, some sort of art piece" ,coordinates:[41.8838, -87.6279]}
 ];
 const els=Object.fromEntries(["taskList","teamCounters","loopConnection"].map(id=>[id,document.getElementById(id)]));
 const createDeviceId=()=>{if(typeof crypto.randomUUID==="function")return crypto.randomUUID();const bytes=crypto.getRandomValues(new Uint8Array(16));bytes[6]=(bytes[6]&15)|64;bytes[8]=(bytes[8]&63)|128;const hex=[...bytes].map(byte=>byte.toString(16).padStart(2,"0")).join("");return `${hex.slice(0,8)}-${hex.slice(8,12)}-${hex.slice(12,16)}-${hex.slice(16,20)}-${hex.slice(20)}`;};
