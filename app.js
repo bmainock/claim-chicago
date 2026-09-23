@@ -14,7 +14,7 @@ L.control.zoom({ position: "bottomleft" }).addTo(map);
 L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", { attribution: "&copy; <a href=\"https://www.openstreetmap.org/copyright\">OpenStreetMap</a> contributors", maxZoom: 19 }).addTo(map);
 
 const els = Object.fromEntries(["search","results","panel","openPanel","emptyState","detailState","areaName","ownerCard","neighborhoodChallenge","challengeName","challengeDescription","claimForm","teamPicker","actionButton","actionHint","message","closePanel","notifyButton","leaderboardButton","clearBoardButton","gameMenu","leaderboardDialog","closeLeaderboard","leaderboardRows","clearBoardDialog","clearBoardForm","closeClearBoard","clearBoardPassword","clearBoardError","confirmClearBoard","connectionDot","connectionText"].map(id => [id, document.getElementById(id)]));
-let areas = [], layerById = new Map(), claims = {}, loopCompletions = JSON.parse(localStorage.getItem("claimChicagoLoopCompletions") || "{}"), badgeCompletions = JSON.parse(localStorage.getItem("claimChicagoExtraCompletions") || "{}"), specialBadgeClaims = JSON.parse(localStorage.getItem("claimChicagoSpecialClaims") || "{}"), selected = null, db = null, firebaseApi = null, firebaseUserId = null, panelMinimized = false;
+let areas = [], layerById = new Map(), claims = {}, loopCompletions = JSON.parse(localStorage.getItem("claimChicagoLoopCompletions") || "{}"), badgeCompletions = JSON.parse(localStorage.getItem("claimChicagoExtraCompletions") || "{}"), specialBadgeClaims = JSON.parse(localStorage.getItem("claimChicagoSpecialClaims") || "{}"), selected = null, db = null, firebaseApi = null, firebaseUserId = null, panelMinimized = false, chinatownLatitude = null;
 const LOOP_TASKS_REQUIRED = 3;
 const createDeviceId = () => {
   if (typeof crypto.randomUUID === "function") return crypto.randomUUID();
@@ -30,8 +30,10 @@ localStorage.setItem("claimChicagoDeviceId", deviceId);
 
 const areaName = f => (f.properties.community || f.properties.name || f.properties.pri_neigh || "Unknown").trim();
 const areaId = f => String(f.properties.area_num_1 || f.properties.area_numbe || areaName(f)).toLowerCase().replace(/[^a-z0-9]+/g,"-");
-const pointsFor = feature => POINTS_BY_NAME.get(normalizeName(areaName(feature))) || 0;
+const pointsFor = feature => isSouthOfChinatown(feature) ? 0 : POINTS_BY_NAME.get(normalizeName(areaName(feature))) || 0;
 const challengeFor = feature => CHALLENGES_BY_NAME.get(normalizeName(areaName(feature)));
+function featureCenterLatitude(feature){const points=[];const collect=value=>{if(!Array.isArray(value))return;if(Array.isArray(value[0]))value.forEach(collect);else if(Number.isFinite(value[1]))points.push(value[1]);};collect(feature.geometry?.coordinates);return points.length?points.reduce((sum,latitude)=>sum+latitude,0)/points.length:NaN;}
+const isSouthOfChinatown = feature => Number.isFinite(chinatownLatitude) && featureCenterLatitude(feature) < chinatownLatitude;
 const mine = claim => db ? claim?.userId === firebaseUserId : claim?.deviceId === deviceId;
 const completedLoopTasks = team => Object.keys(loopCompletions?.[team] || {}).length;
 const canClaimNeighborhood = team => !!team && completedLoopTasks(team) >= LOOP_TASKS_REQUIRED;
@@ -68,7 +70,7 @@ const ownerColor = name => {
   for (const char of String(name || "" ).trim().toLowerCase()) hash = ((hash << 5) - hash + char.charCodeAt(0)) | 0;
   return palette[Math.abs(hash) % palette.length];
 };
-const styleFor = feature => { const claim=claims[areaId(feature)]; return { color: selected===areaId(feature)?"#172019":"#f7f3e9", weight:selected===areaId(feature)?3:1.4, fillColor:claim?ownerColor(claim.owner):"#9fb5a1", fillOpacity:claim ? 0.76 : 0.38 }; };
+const styleFor = feature => { const claim=claims[areaId(feature)],locked=isSouthOfChinatown(feature); return { color: selected===areaId(feature)?"#172019":"#f7f3e9", weight:selected===areaId(feature)?3:1.4, fillColor:locked?"#7b827d":claim?ownerColor(claim.owner):"#9fb5a1", fillOpacity:locked?0.56:claim?0.76:0.38 }; };
 
 function setConnection(kind,text){ els.connectionDot.className=`dot ${kind}`; els.connectionText.textContent=text; }
 function refreshStyles(){ layerById.forEach((layer,id)=>layer.setStyle(styleFor(areas.find(f=>areaId(f)===id)))); }
@@ -84,23 +86,26 @@ function renderLeaderboard(){
 }
 function renderPanel(){
   els.panel.hidden=panelMinimized; els.openPanel.hidden=!panelMinimized; els.emptyState.hidden=!!selected; els.detailState.hidden=!selected; els.panel.classList.toggle("empty",!selected); if(!selected)return;
-  const feature=areas.find(f=>areaId(f)===selected), claim=claims[selected]; els.areaName.textContent=areaName(feature);
+  const feature=areas.find(f=>areaId(f)===selected), claim=claims[selected],locked=isSouthOfChinatown(feature); els.areaName.textContent=areaName(feature);
   const challenge=challengeFor(feature); els.neighborhoodChallenge.hidden=!challenge;
   if(challenge){els.challengeName.textContent=challenge.title;els.challengeDescription.textContent=challenge.description;}
   const points=pointsFor(feature);
-  if(claim){
+  if(locked){
+    els.ownerCard.innerHTML="<div><strong>Not available to claim</strong><small>South of Chinatown · challenge remains visible</small></div>";
+  }else if(claim){
     const ownership=mine(claim)?"Claimed by you - ":"Held by ";
     els.ownerCard.innerHTML='<span class="owner-color" style="background:'+ownerColor(claim.owner)+'"></span><div><strong>'+ownership+escapeHtml(claim.owner)+'</strong><small>'+points+' '+(points===1?"point":"points")+' - '+new Date(claim.updatedAt).toLocaleString()+"</small></div>";
   }else{
     els.ownerCard.innerHTML="<div><strong>Available to claim</strong><small>Worth "+points+" "+(points===1?"point":"points")+"</small></div>";
   }
   const teamIsUnlocked=canClaimNeighborhood(selectedTeam);
-  els.actionButton.textContent=claim?(mine(claim)?"Forfeit neighborhood":"Already claimed"):"Claim neighborhood"; els.actionButton.disabled=(!!claim&&!mine(claim))||(!claim&&(!selectedTeam||!teamIsUnlocked)); els.actionButton.classList.toggle("danger",mine(claim));
+  els.actionButton.textContent=locked?"Claiming unavailable":claim?(mine(claim)?"Forfeit neighborhood":"Already claimed"):"Claim neighborhood"; els.actionButton.disabled=locked||(!!claim&&!mine(claim))||(!claim&&(!selectedTeam||!teamIsUnlocked)); els.actionButton.classList.toggle("danger",!locked&&mine(claim));
   let actionHint="Changes appear for everyone connected to the live map.";
-  if(claim&&!mine(claim))actionHint="Only the current holder can forfeit it.";
+  if(locked)actionHint="Neighborhoods south of Chinatown are disabled, but their challenges can still be viewed.";
+  else if(claim&&!mine(claim))actionHint="Only the current holder can forfeit it.";
   else if(!claim&&!selectedTeam)actionHint="Choose a team to claim this neighborhood.";
   else if(!claim&&!teamIsUnlocked){const remaining=Math.max(0,LOOP_TASKS_REQUIRED-completedLoopTasks(selectedTeam));actionHint=selectedTeam+" needs "+remaining+" more Loop task"+(remaining===1?"":"s")+" before it can claim neighborhoods.";}
-  renderTeamPicker(!!claim); els.actionHint.textContent=actionHint; els.message.textContent="";
+  renderTeamPicker(locked||!!claim); els.actionHint.textContent=actionHint; els.message.textContent="";
 }
 function selectArea(id,zoom=true){ panelMinimized=false; selected=id; const layer=layerById.get(id); if(zoom&&layer)map.fitBounds(layer.getBounds(),{padding:[35,35],maxZoom:13}); renderPanel();refreshStyles();els.results.hidden=true; }
 function escapeHtml(v){return String(v).replace(/[&<>'"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;","'":"&#39;",'"':"&quot;"}[c]));}
@@ -109,7 +114,7 @@ function search(q){
   const found=(term?areas.filter(feature=>areaName(feature).toLowerCase().includes(term)):areas).slice(0,10);
   els.results.innerHTML=found.map(feature=>{
     const id=areaId(feature),claim=claims[id];
-    const status=!claim?"Available":mine(claim)?"Yours":"Held by "+escapeHtml(claim.owner);
+    const status=isSouthOfChinatown(feature)?"Unavailable":!claim?"Available":mine(claim)?"Yours":"Held by "+escapeHtml(claim.owner);
     return '<button class="result" data-id="'+id+'"><span>'+escapeHtml(areaName(feature))+"</span><small>"+pointsFor(feature)+" pts - "+status+"</small></button>";
   }).join("");
   els.results.hidden=!term;
@@ -125,6 +130,7 @@ async function initFirebase(){
   } catch(e){ console.error(e);db=null;firebaseApi=null;firebaseUserId=null;setConnection("demo","Connection failed · using this device only");claims=JSON.parse(localStorage.getItem("claimChicagoClaims")||"{}"); }
 }
 async function updateClaim(id,next){
+  const feature=areas.find(item=>areaId(item)===id); if(next&&feature&&isSouthOfChinatown(feature))throw new Error("Neighborhoods south of Chinatown cannot be claimed.");
   if(db){ const ref=firebaseApi.ref(db,`claims/${id}`); const result=await firebaseApi.runTransaction(ref,current=>{ if(next===null)return current?.userId===firebaseUserId?null:undefined; return current?undefined:next; }); if(!result.committed)throw new Error("That neighborhood changed before your request finished. Try again."); }
   else { if(next&&claims[id])throw new Error("This neighborhood is already claimed."); if(next===null&&!mine(claims[id]))throw new Error("Only the current holder can forfeit this area."); if(next===null)delete claims[id];else claims[id]=next;localStorage.setItem("claimChicagoClaims",JSON.stringify(claims));refreshStyles();renderPanel(); }
 }
@@ -140,7 +146,7 @@ async function clearBoard(event){
 function notifyChanges(before,after){ if(!("Notification" in window)||Notification.permission!=="granted")return; Object.entries(after).forEach(([id,c])=>{if(!before[id]&&c.deviceId!==deviceId){const f=areas.find(x=>areaId(x)===id);if(f)new Notification(`${areaName(f)} was claimed`,{body:`${c.owner} now holds this neighborhood.`});}}); }
 
 els.teamPicker.addEventListener("click",e=>{const button=e.target.closest("[data-team]");if(!button||button.disabled)return;selectedTeam=button.dataset.team;localStorage.setItem("claimChicagoTeam",selectedTeam);renderTeamPicker();renderPanel();});
-els.claimForm.addEventListener("submit",async e=>{e.preventDefault();if(!selectedTeam&&!claims[selected])return;if(!claims[selected]&&!canClaimNeighborhood(selectedTeam)){renderPanel();return;}els.actionButton.disabled=true;try{const timestamp=Date.now();await updateClaim(selected,claims[selected]?null:{owner:selectedTeam,deviceId,userId:firebaseUserId,updatedAt:timestamp,timestamp});renderLeaderboard();}catch(err){els.message.textContent=err.message;els.message.className="message error";}finally{renderPanel();}});
+els.claimForm.addEventListener("submit",async e=>{e.preventDefault();const feature=areas.find(item=>areaId(item)===selected);if(feature&&isSouthOfChinatown(feature)){renderPanel();return;}if(!selectedTeam&&!claims[selected])return;if(!claims[selected]&&!canClaimNeighborhood(selectedTeam)){renderPanel();return;}els.actionButton.disabled=true;try{const timestamp=Date.now();await updateClaim(selected,claims[selected]?null:{owner:selectedTeam,deviceId,userId:firebaseUserId,updatedAt:timestamp,timestamp});renderLeaderboard();}catch(err){els.message.textContent=err.message;els.message.className="message error";}finally{renderPanel();}});
 els.search.addEventListener("input",e=>search(e.target.value)); els.results.addEventListener("click",e=>{const b=e.target.closest("[data-id]");if(b)selectArea(b.dataset.id);});
 document.addEventListener("click",e=>{if(!e.target.closest(".search-wrap"))els.results.hidden=true;});els.closePanel.addEventListener("click",()=>{selected=null;panelMinimized=true;renderPanel();refreshStyles();map.setView(CHICAGO_CENTER,10);});els.openPanel.addEventListener("click",()=>{panelMinimized=false;renderPanel();});
 els.notifyButton.addEventListener("click",async()=>{ if(!("Notification" in window)){els.notifyButton.querySelector("b").textContent="Alerts unsupported";return;} const p=await Notification.requestPermission();els.notifyButton.querySelector("b").textContent=p==="granted"?"Alerts on":"Alerts blocked";els.gameMenu.open=false;});
@@ -149,7 +155,7 @@ els.clearBoardButton.addEventListener("click",()=>{els.gameMenu.open=false;els.c
 if("Notification" in window&&Notification.permission==="granted")els.notifyButton.querySelector("b").textContent="Alerts on";
 
 async function init(){
-  try { const geo=await loadDistrictGeoJson(DATA_URL);areas=geo.features.sort((a,b)=>areaName(a).localeCompare(areaName(b)));
+  try { const geo=await loadDistrictGeoJson(DATA_URL);areas=geo.features.sort((a,b)=>areaName(a).localeCompare(areaName(b)));const chinatown=areas.find(feature=>normalizeName(areaName(feature))==="chinatown");chinatownLatitude=chinatown?featureCenterLatitude(chinatown):null;
     const districtLayer=L.geoJSON(geo,{style:styleFor,onEachFeature:(f,l)=>{const id=areaId(f);layerById.set(id,l);l.bindTooltip(areaName(f),{sticky:true,direction:"top"});l.on({click:()=>selectArea(id,false),mouseover:()=>l.setStyle({weight:3}),mouseout:()=>refreshStyles()});}}).addTo(map);if(districtLayer.getBounds().isValid())map.fitBounds(districtLayer.getBounds(),{padding:[24,24],maxZoom:11});await initFirebase();refreshStyles();renderTeamPicker();renderLeaderboard();
   } catch(e){console.error(e);setConnection("demo","Could not load district boundaries");els.emptyState.querySelector("p:not(.eyebrow)").textContent="The district boundary data could not load. Check your connection and refresh.";}
 }
