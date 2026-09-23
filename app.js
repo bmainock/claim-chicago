@@ -5,6 +5,9 @@ import { BADGE_POINTS_BY_ID } from "./badge-challenges.js";
 // site always receives the complete district geometry.
 const DATA_URL = "https://www.google.com/maps/d/kml?mid=1tcZJ-JgIkV0PNabasV7LlfQ9ZdyyNunc&forcekml=1";
 const CHICAGO_CENTER = [41.88, -87.63];
+// Use the Chinatown boundary as the cutoff when it is present.  This fallback
+// keeps the game rule working if a map export names that placemark differently.
+const CHINATOWN_CUTOFF_FALLBACK_LATITUDE = 41.852;
 const CLEAR_PASSWORD_HASH = "339319de11cc80f80baa79065f9dc62ad6bf16fb39768f701914296458099254";
 const normalizeName = value => String(value).trim().toLowerCase().replace(/[^a-z0-9]/g,"");
 const POINTS_BY_NAME = new Map(Object.entries(NEIGHBORHOOD_POINTS).map(([name,points])=>[normalizeName(name),points]));
@@ -155,7 +158,7 @@ els.clearBoardButton.addEventListener("click",()=>{els.gameMenu.open=false;els.c
 if("Notification" in window&&Notification.permission==="granted")els.notifyButton.querySelector("b").textContent="Alerts on";
 
 async function init(){
-  try { const geo=await loadDistrictGeoJson(DATA_URL);areas=geo.features.sort((a,b)=>areaName(a).localeCompare(areaName(b)));const chinatown=areas.find(feature=>normalizeName(areaName(feature))==="chinatown");chinatownLatitude=chinatown?featureCenterLatitude(chinatown):null;
+  try { const geo=await loadDistrictGeoJson(DATA_URL);areas=geo.features.sort((a,b)=>areaName(a).localeCompare(areaName(b)));const chinatown=areas.find(feature=>normalizeName(areaName(feature)).includes("chinatown"));chinatownLatitude=chinatown?featureCenterLatitude(chinatown):CHINATOWN_CUTOFF_FALLBACK_LATITUDE;
     const districtLayer=L.geoJSON(geo,{style:styleFor,onEachFeature:(f,l)=>{const id=areaId(f);layerById.set(id,l);l.bindTooltip(areaName(f),{sticky:true,direction:"top"});l.on({click:()=>selectArea(id,false),mouseover:()=>l.setStyle({weight:3}),mouseout:()=>refreshStyles()});}}).addTo(map);if(districtLayer.getBounds().isValid())map.fitBounds(districtLayer.getBounds(),{padding:[24,24],maxZoom:11});await initFirebase();refreshStyles();renderTeamPicker();renderLeaderboard();
   } catch(e){console.error(e);setConnection("demo","Could not load district boundaries");els.emptyState.querySelector("p:not(.eyebrow)").textContent="The district boundary data could not load. Check your connection and refresh.";}
 }
